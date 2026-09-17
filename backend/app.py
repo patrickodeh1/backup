@@ -203,6 +203,25 @@ class PlayPauseRequest(BaseModel):
     well_id: Optional[str] = None  # omit to apply to all wells
 
 
+
+# Postgres lowercases column names; dashboard.html expects the original CSV casing
+# (TP2, Oil_temperature, etc.). Alias readings back before they go out over the API.
+READING_KEY_MAP = {
+    "timestamp": "timestamp",
+    "tp2": "TP2", "tp3": "TP3", "h1": "H1",
+    "dv_pressure": "DV_pressure", "reservoirs": "Reservoirs",
+    "oil_temperature": "Oil_temperature", "motor_current": "Motor_current",
+    "comp": "COMP", "dv_eletric": "DV_eletric", "towers": "Towers",
+    "mpg": "MPG", "lps": "LPS", "pressure_switch": "Pressure_switch",
+    "oil_level": "Oil_level", "caudal_impulses": "Caudal_impulses",
+}
+
+
+def _alias_reading(reading):
+    if reading is None:
+        return None
+    return {READING_KEY_MAP.get(k, k): v for k, v in reading.items()}
+
 def _well_status(well_id):
     for a in state["alerts"]:
         if a["well_id"] == well_id:
@@ -242,8 +261,8 @@ def list_wells():
             "y": w["y"],
             "status": _well_status(wid),
             "running": sim.running,
-            "reading": {k: (str(v) if k == 'timestamp' else v)
-                        for k, v in reading.items()} if reading else None,
+            "reading": _alias_reading({k: (str(v) if k == 'timestamp' else v)
+                        for k, v in reading.items()}) if reading else None,
         })
     return {"wells": out}
 
@@ -257,6 +276,7 @@ def well_live_reading(well_id: str):
     if reading is None:
         return {"reading": None}
     reading = {k: (str(v) if k == 'timestamp' else v) for k, v in reading.items()}
+    reading = _alias_reading(reading)
     return {"reading": reading}
 
 
