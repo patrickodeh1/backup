@@ -71,11 +71,20 @@ class ReplaySimulator:
             self.cursor_ts = self.min_ts  # loop back to start for a continuous demo
             return pd.DataFrame()
         self.cursor_ts = new_rows["ts"].iloc[-1] + pd.Timedelta(seconds=1)
-        # the pipeline/feature code expects a "timestamp" column (matching the
-        # original CSV), while the Postgres table uses "ts" -- alias it here so
-        # every downstream consumer (buffer, current_window, pipeline.run) sees
-        # the same column name it always has.
-        new_rows = new_rows.rename(columns={"ts": "timestamp"})
+        # Postgres lowercases all column names. The pipeline / engineer_features /
+        # dashboard all expect the original CSV casing throughout -- rename every
+        # column back here, once, right after reading from the DB, so nothing
+        # downstream (buffer, current_window, pipeline.run, engineer_features)
+        # ever has to know Postgres was involved.
+        new_rows = new_rows.rename(columns={
+            "ts": "timestamp",
+            "tp2": "TP2", "tp3": "TP3", "h1": "H1",
+            "dv_pressure": "DV_pressure", "reservoirs": "Reservoirs",
+            "oil_temperature": "Oil_temperature", "motor_current": "Motor_current",
+            "comp": "COMP", "dv_eletric": "DV_eletric", "towers": "Towers",
+            "mpg": "MPG", "lps": "LPS", "pressure_switch": "Pressure_switch",
+            "oil_level": "Oil_level", "caudal_impulses": "Caudal_impulses",
+        })
         self.buffer = pd.concat([self.buffer, new_rows]).tail(self.window_size * 3)
         return new_rows
 
