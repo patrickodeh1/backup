@@ -1,12 +1,12 @@
 """
-app.py — unified NAUD backend, multi-well.
+app.py — unified NAUD backend, multi-well (Postgres-backed).
 
 Simulates a small fleet of wells/compressors, each independently replaying the real
-historical dataset (at a randomized starting offset, with small cosmetic jitter for
-visual distinctness), each running the real trained pipeline on its own buffer. Most
-wells loop through normal history indefinitely; any well can be pointed at a known
-failure window on command, from a separate /control surface (not the main dashboard),
-so a second device can drive the demo.
+historical dataset (stored in Postgres, at a randomized starting offset, with small
+cosmetic jitter for visual distinctness), each running the real trained pipeline on
+its own buffer. Most wells loop through normal history indefinitely; any well can be
+pointed at a known failure window on command, from a separate /control surface (not
+the main dashboard), so a second device can drive the demo.
 
 Run:
     cd backend
@@ -15,10 +15,9 @@ Run:
 Dashboard: http://localhost:8000/         (what judges see)
 Control:   http://localhost:8000/control  (what you run the demo from, on another device)
 
-Data/model resolution order (first that exists wins):
-    1. DATA_PATH / MODEL_PATH env vars, if set
-    2. data/MetroPT3(AirCompressor).csv + models/compressor_pipeline_v3.pkl (your real files)
-    3. auto-generated demo dataset + demo model (generate_demo_data.py), built on first run
+Data source: Postgres, via DATABASE_URL env var (Heroku sets this automatically once
+the heroku-postgresql addon is attached). Table: readings, loaded via load_csv.py.
+Model: MODEL_PATH env var, defaults to models/compressor_pipeline_v3.pkl.
 """
 
 import os
@@ -30,6 +29,7 @@ from contextlib import asynccontextmanager
 import numpy as np
 import joblib
 import pandas as pd
+from sqlalchemy import create_engine
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -43,13 +43,13 @@ sys.path.insert(0, HERE)
 from pipeline import CompressorAnomalyPipeline  # noqa: E402
 from explain import explain_alerts_batch  # noqa: E402
 from replay import ReplaySimulator  # noqa: E402
-import generate_demo_data as demo  # noqa: E402
-from generate_demo_data import engineer_features, SENSORS  # noqa: E402
+from generate_demo_data import SENSORS  # noqa: E402
 
-REAL_DATA_PATH = os.environ.get("DATA_PATH", os.path.join(HERE, '..', 'data', 'MetroPT3(AirCompressor).csv'))
 REAL_MODEL_PATH = os.environ.get("MODEL_PATH", os.path.join(HERE, '..', 'models', 'compressor_pipeline_v3.pkl'))
-DEMO_DATA_PATH = os.path.join(HERE, '..', 'data', 'demo_compressor_data.csv')
-DEMO_MODEL_PATH = os.path.join(HERE, '..', 'models', 'demo_pipeline.pkl')
+READINGS_TABLE = os.environ.get("READINGS_TABLE", "readings")
+
+_raw_db_url = os.environ.get("DATABASE_URL")
+DATABASE_URL = _raw_db_url.replace("postgres://", "postgresql+psycopg2://", 1) if _raw_db_url else None
 
 KNOWN_FAILURES = [
     ('2020-04-18 00:00', '2020-04-18 23:59', 'Failure 1 -- Air Leak'),
@@ -72,7 +72,7 @@ JITTER_FRAC = 0.03  # cosmetic display-only noise, see replay.py
 
 state = {
     "pipeline": None,
-    "df": None,
+    "engine": None,
     "using_demo": False,
     "failures": KNOWN_FAILURES,
     "wells": {},          # well_id -> {"name", "x", "y", "simulator"}
@@ -83,39 +83,17 @@ state = {
 
 
 def load_pipeline_and_data():
-    have_real = os.path.exists(REAL_DATA_PATH) and os.path.exists(REAL_MODEL_PATH)
-    if have_real:
-        print(f"Loading real data from {REAL_DATA_PATH} and model from {REAL_MODEL_PATH}")
-        df = pd.read_csv(REAL_DATA_PATH)
-        if 'Unnamed: 0' in df.columns:
-            df = df.drop(columns=['Unnamed: 0'])
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df = df.sort_values('timestamp').reset_index(drop=True)
-        pipeline = joblib.load(REAL_MODEL_PATH)
-        missing_features = [c for c in pipeline.feature_cols if c not in df.columns]
-        if missing_features:
-            print(f"Engineering {len(missing_features)} missing feature columns "
-                  f"on the full history (one-time, at startup, can take a couple minutes "
-                  f"on the full dataset)...")
-            df = engineer_features(df)
-        state["using_demo"] = False
-        state["failures"] = KNOWN_FAILURES
-        return df, pipeline
-
-    print("Real data/model not found -- building the fallback demo dataset "
-          "(this is a stand-in; swap in your real CSV/model for the actual pitch).")
-    if not (os.path.exists(DEMO_DATA_PATH) and os.path.exists(DEMO_MODEL_PATH)):
-        demo.build_and_save(DEMO_DATA_PATH, DEMO_MODEL_PATH)
-    df = pd.read_csv(DEMO_DATA_PATH)
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    pipeline = joblib.load(DEMO_MODEL_PATH)
-    fail_rows = df[df['label'] == 1]
-    demo_failures = []
-    if len(fail_rows):
-        demo_failures = [(str(fail_rows['timestamp'].min()), str(fail_rows['timestamp'].max()), 'Demo Failure 1')]
-    state["using_demo"] = True
-    state["failures"] = demo_failures
-    return df, pipeline
+    if not DATABASE_URL:
+        raise RuntimeError(
+            "DATABASE_URL is not set. Attach a Postgres addon (heroku addons:create "
+            "heroku-postgresql:essential-0) or set DATABASE_URL locally."
+        )
+    print(f"Connecting to Postgres and loading model from {REAL_MODEL_PATH}")
+    engine = create_engine(DATABASE_URL)
+    pipeline = joblib.load(REAL_MODEL_PATH)
+    state["using_demo"] = False
+    state["failures"] = KNOWN_FAILURES
+    return engine, pipeline
 
 
 def make_on_tick(well_id, well_name):
@@ -160,17 +138,20 @@ def make_on_tick(well_id, well_name):
     return on_tick
 
 
-def build_wells(df, pipeline):
+def build_wells(engine, pipeline):
     rng = np.random.default_rng(7)
+    bounds = pd.read_sql(f"SELECT min(ts) AS lo, max(ts) AS hi FROM {READINGS_TABLE}", engine).iloc[0]
+    lo, hi = bounds["lo"], bounds["hi"]
+    span_seconds = max(1, int((hi - lo).total_seconds()))
     wells = {}
-    usable_len = max(1, len(df) - pipeline.persistence_window * 4)
     for i, wd in enumerate(WELL_DEFS):
-        start = int(rng.integers(0, usable_len)) if usable_len > 0 else 0
+        offset = int(rng.integers(0, span_seconds))
+        start_ts = lo + pd.Timedelta(seconds=offset)
         sim = ReplaySimulator(
-            df, window_size=pipeline.persistence_window,
+            engine, table=READINGS_TABLE, window_size=pipeline.persistence_window,
             tick_seconds=1.2, rows_per_tick=6,
             jitter_frac=JITTER_FRAC, sensor_cols=SENSORS,
-            start_cursor=start, rng_seed=1000 + i,
+            start_ts=start_ts, rng_seed=1000 + i,
         )
         wells[wd["id"]] = {"name": wd["name"], "x": wd["x"], "y": wd["y"], "simulator": sim}
     return wells
@@ -190,17 +171,17 @@ def start_background_replay():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    df, pipeline = load_pipeline_and_data()
+    engine, pipeline = load_pipeline_and_data()
     state["pipeline"] = pipeline
-    state["df"] = df
-    state["wells"] = build_wells(df, pipeline)
+    state["engine"] = engine
+    state["wells"] = build_wells(engine, pipeline)
     start_background_replay()
     yield
     for well in state["wells"].values():
         well["simulator"].stop()
 
 
-app = FastAPI(title="NAUD Compressor Monitoring Backend", version="2.0", lifespan=lifespan)
+app = FastAPI(title="NAUD Compressor Monitoring Backend", version="2.1", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -229,14 +210,17 @@ def _well_status(well_id):
 @app.get("/health")
 def health():
     wells_summary = {
-        wid: {"running": w["simulator"].running, "cursor": w["simulator"].cursor}
+        wid: {"running": w["simulator"].running, "cursor_ts": str(w["simulator"].cursor_ts)}
         for wid, w in state["wells"].items()
     }
+    total_rows = None
+    if state.get("engine") is not None:
+        total_rows = int(pd.read_sql(f"SELECT count(*) AS n FROM {READINGS_TABLE}", state["engine"])["n"][0])
     return {
         "status": "ok",
         "using_demo_data": state["using_demo"],
         "model_loaded": state["pipeline"] is not None,
-        "total_rows": len(state["df"]) if state["df"] is not None else None,
+        "total_rows": total_rows,
         "well_count": len(state["wells"]),
         "wells": wells_summary,
     }
@@ -304,7 +288,7 @@ def jump(req: JumpRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     state["alerts"] = [a for a in state["alerts"] if a["well_id"] != req.well_id]
-    return {"status": "jumped", "well_id": req.well_id, "cursor": well["simulator"].cursor}
+    return {"status": "jumped", "well_id": req.well_id, "cursor_ts": str(well["simulator"].cursor_ts)}
 
 
 @app.post("/control/speed")
