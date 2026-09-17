@@ -162,12 +162,17 @@ def build_wells(engine, pipeline):
 
 def start_background_replay():
     def runner():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        state["loop"] = loop
-        for well_id, well in state["wells"].items():
-            loop.create_task(well["simulator"].run_forever(make_on_tick(well_id, well["name"])))
-        loop.run_forever()
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            state["loop"] = loop
+            for well_id, well in state["wells"].items():
+                loop.create_task(well["simulator"].run_forever(make_on_tick(well_id, well["name"])))
+            print("[replay] background loop started, running forever")
+            loop.run_forever()
+        except Exception as e:
+            print(f"[replay] FATAL: background thread crashed: {e}")
+            state["loop"] = None
     t = threading.Thread(target=runner, daemon=True)
     t.start()
 
@@ -330,12 +335,15 @@ def speed(req: SpeedRequest = SpeedRequest()):
 @app.post("/control/play")
 def play(req: PlayPauseRequest = PlayPauseRequest()):
     targets = [(req.well_id, state["wells"].get(req.well_id))] if req.well_id else list(state["wells"].items())
+    loop = state.get("loop")
+    if loop is None:
+        raise HTTPException(status_code=503, detail="Background replay loop is not running (dyno needs a restart)")
+    started = 0
     for wid, w in targets:
         if w and not w["simulator"].running:
-            loop = state.get("loop")
-            if loop:
-                loop.create_task(w["simulator"].run_forever(make_on_tick(wid, w["name"])))
-    return {"status": "playing", "applied_to": req.well_id or "all wells"}
+            loop.create_task(w["simulator"].run_forever(make_on_tick(wid, w["name"])))
+            started += 1
+    return {"status": "playing", "applied_to": req.well_id or "all wells", "restarted_count": started}
 
 
 @app.post("/control/pause")
