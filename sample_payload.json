@@ -1,0 +1,10 @@
+{
+  "rows": [
+    {"timestamp": "2020-07-15T14:30:00", "TP2": 8.9, "TP3": 8.8, "H1": 0.09, "DV_pressure": 1.2, "Reservoirs": 8.85, "Oil_temperature": 87.1, "Motor_current": 5.7},
+    {"timestamp": "2020-07-15T14:30:10", "TP2": 8.7, "TP3": 8.7, "H1": 0.07, "DV_pressure": 1.1, "Reservoirs": 8.79, "Oil_temperature": 87.3, "Motor_current": 5.6},
+    {"timestamp": "2020-07-15T14:30:20", "TP2": 8.6, "TP3": 8.6, "H1": 0.10, "DV_pressure": 1.0, "Reservoirs": 8.71, "Oil_temperature": 87.5, "Motor_current": 5.65},
+    {"timestamp": "2020-07-15T14:30:30", "TP2": 8.5, "TP3": 8.5, "H1": 0.08, "DV_pressure": 0.9, "Reservoirs": 8.62, "Oil_temperature": 87.8, "Motor_current": 5.55},
+    {"timestamp": "2020-07-15T14:30:40", "TP2": 8.4, "TP3": 8.4, "H1": 0.11, "DV_pressure": 0.95, "Reservoirs": 8.55, "Oil_temperature": 88.0, "Motor_current": 5.6}
+  ],
+  "top_n_features": 3
+}

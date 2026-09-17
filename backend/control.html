@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NAUD — Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #12171f; --panel-2: #171d26; --line: #232a35;
+    --text: #f2f4f7; --muted: #8b95a3; --muted-2: #565f6d;
+    --orange: #ff6a3d; --orange-dim: rgba(255,106,61,0.12);
+    --teal: #2fd9a8; --red: #f0473f; --amber: #f0a63d;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, sans-serif; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 80px; }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .logo { color: var(--orange); font-weight: 800; font-size: 20px; }
+  .subtitle { color: var(--muted); font-size: 13px; }
+  .conn-status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); }
+  .conn-dot.live { background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+
+  .global-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin-bottom: 20px; }
+  .global-title { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 12px; font-weight: 600; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); font-size: 13.5px; padding: 9px 16px; border-radius: 8px; cursor: pointer; font-family: inherit; }
+  .btn:hover { border-color: var(--teal); }
+  .btn.orange { color: var(--orange); }
+
+  .well-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin-bottom: 14px; }
+  .well-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .well-name { font-weight: 600; font-size: 14px; }
+  .well-status { font-family: monospace; font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 6px; }
+  .well-status.MONITOR { background: rgba(47,217,168,0.12); color: var(--teal); }
+  .well-status.INVESTIGATE { background: rgba(240,166,61,0.12); color: var(--amber); }
+  .well-status.ESCALATE { background: rgba(240,71,63,0.14); color: var(--red); }
+  .well-status.NOMINAL { background: rgba(139,149,163,0.12); color: var(--muted); }
+  .well-sub { font-size: 12px; color: var(--muted-2); margin-bottom: 12px; }
+  .section-label { font-size: 11px; color: var(--muted-2); text-transform: uppercase; letter-spacing: 0.06em; margin: 12px 0 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div><div class="logo">NAUD Control</div><div class="subtitle">Run this from a second device during the demo</div></div>
+    <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connText">connecting…</span></div>
+  </div>
+
+  <div class="global-panel">
+    <div class="global-title">All wells</div>
+    <div class="btn-row">
+      <button class="btn" onclick="playAll()">Play all</button>
+      <button class="btn" onclick="pauseAll()">Pause all</button>
+      <button class="btn" onclick="speedAll(1.2)">1x</button>
+      <button class="btn" onclick="speedAll(0.35)">3x</button>
+      <button class="btn" onclick="speedAll(0.12)">10x</button>
+    </div>
+  </div>
+
+  <div id="wellList"></div>
+</div>
+
+<script>
+const API = '';
+let wells = [];
+let failures = [];
+
+async function pollHealth() {
+  try {
+    const r = await fetch(`${API}/health`);
+    await r.json();
+    document.getElementById('connDot').classList.add('live');
+    document.getElementById('connText').textContent = 'live';
+  } catch (e) {
+    document.getElementById('connDot').classList.remove('live');
+    document.getElementById('connText').textContent = 'disconnected';
+  }
+}
+
+async function loadFailures() {
+  const r = await fetch(`${API}/failures`);
+  const data = await r.json();
+  failures = data.failures || [];
+}
+
+async function pollWells() {
+  try {
+    const r = await fetch(`${API}/wells`);
+    const data = await r.json();
+    wells = data.wells || [];
+    render();
+  } catch (e) { /* keep last render */ }
+}
+
+function render() {
+  const list = document.getElementById('wellList');
+  list.innerHTML = wells.map(w => `
+    <div class="well-card">
+      <div class="well-head">
+        <div class="well-name">${w.name}</div>
+        <div class="well-status ${w.status}">${w.status}</div>
+      </div>
+      <div class="well-sub">${w.running ? 'running' : 'paused'} · cursor moving through history</div>
+      <div class="section-label">Playback</div>
+      <div class="btn-row">
+        <button class="btn" onclick="playOne('${w.id}')">Play</button>
+        <button class="btn" onclick="pauseOne('${w.id}')">Pause</button>
+        <button class="btn" onclick="speedOne('${w.id}', 1.2)">1x</button>
+        <button class="btn" onclick="speedOne('${w.id}', 0.35)">3x</button>
+        <button class="btn" onclick="speedOne('${w.id}', 0.12)">10x</button>
+      </div>
+      <div class="section-label">Jump to failure</div>
+      <div class="btn-row">
+        ${failures.map((f, i) => `<button class="btn orange" onclick="jumpOne('${w.id}', ${i + 1})">${f.name}</button>`).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function playOne(id) { await fetch(`${API}/control/play`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({well_id: id}) }); }
+async function pauseOne(id) { await fetch(`${API}/control/pause`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({well_id: id}) }); }
+async function speedOne(id, t) { await fetch(`${API}/control/speed`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({well_id: id, tick_seconds: t, rows_per_tick: 6}) }); }
+async function jumpOne(id, failureId) { await fetch(`${API}/control/jump`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({well_id: id, failure_id: failureId}) }); }
+
+async function playAll() { await fetch(`${API}/control/play`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}) }); }
+async function pauseAll() { await fetch(`${API}/control/pause`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({}) }); }
+async function speedAll(t) { await fetch(`${API}/control/speed`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({tick_seconds: t, rows_per_tick: 6}) }); }
+
+loadFailures();
+pollHealth();
+pollWells();
+setInterval(pollHealth, 4000);
+setInterval(pollWells, 1500);
+</script>
+</body>
+</html>

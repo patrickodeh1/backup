@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NAUD — Compressor Monitoring</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #12171f; --panel-2: #171d26; --line: #232a35;
+    --text: #f2f4f7; --muted: #8b95a3; --muted-2: #565f6d;
+    --orange: #ff6a3d; --orange-dim: rgba(255,106,61,0.12);
+    --teal: #2fd9a8; --red: #f0473f; --amber: #f0a63d;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, sans-serif; }
+  .app { display: grid; grid-template-columns: 260px 1fr; height: 100vh; }
+
+  .sidebar { background: var(--panel); border-right: 1px solid var(--line); padding: 28px 20px; }
+  .logo { color: var(--orange); font-weight: 800; font-size: 22px; letter-spacing: 0.02em; margin-bottom: 36px; }
+  .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 8px; margin-bottom: 6px; color: var(--muted); font-weight: 500; font-size: 14.5px; cursor: pointer; border: 1px solid transparent; }
+  .nav-item:hover { color: var(--text); }
+  .nav-item.active { color: var(--orange); background: var(--orange-dim); border-color: rgba(255,106,61,0.35); }
+  .nav-icon { width: 18px; height: 18px; opacity: 0.9; flex-shrink: 0; }
+
+  .main { overflow-y: auto; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; padding: 32px 36px 24px; }
+  .page-title { font-size: 26px; font-weight: 700; }
+  .page { padding: 0 36px 36px; display: none; }
+  .page.active { display: block; }
+
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+  .stat-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+  .stat-card.alert { border-color: rgba(240,71,63,0.4); background: linear-gradient(180deg, rgba(240,71,63,0.08), transparent); }
+  .stat-num { font-size: 30px; font-weight: 800; margin-bottom: 4px; }
+  .stat-num.red { color: var(--red); }
+  .stat-label { font-size: 13.5px; color: var(--muted); }
+
+  .assessment-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px 24px; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 18px; border-left: 4px solid var(--muted-2); transition: border-color 0.3s ease; }
+  .assessment-card.MONITOR { border-left-color: var(--teal); }
+  .assessment-card.INVESTIGATE { border-left-color: var(--amber); }
+  .assessment-card.ESCALATE { border-left-color: var(--red); }
+  .assessment-badge { font-family: monospace; font-weight: 700; font-size: 12px; padding: 6px 12px; border-radius: 6px; white-space: nowrap; margin-top: 2px; }
+  .assessment-badge.MONITOR { background: rgba(47,217,168,0.12); color: var(--teal); }
+  .assessment-badge.INVESTIGATE { background: rgba(240,166,61,0.12); color: var(--amber); }
+  .assessment-badge.ESCALATE { background: rgba(240,71,63,0.14); color: var(--red); }
+  .assessment-badge.NOMINAL { background: rgba(139,149,163,0.12); color: var(--muted); }
+  .assessment-well { font-size: 12.5px; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+  .assessment-text { font-size: 14px; line-height: 1.6; color: var(--text); white-space: pre-line; }
+  .assessment-text .empty { color: var(--muted); }
+
+  .grid-2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 24px; }
+  .panel-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+  .panel-title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .panel-sub { font-size: 13.5px; color: var(--muted); }
+  .panel-sub .val { color: var(--text); font-weight: 600; }
+  .tab-group { display: flex; gap: 4px; background: var(--panel-2); border-radius: 8px; padding: 3px; }
+  .tab-btn { padding: 6px 14px; border-radius: 6px; font-size: 13px; color: var(--muted); cursor: pointer; border: none; background: transparent; font-family: inherit; }
+  .tab-btn.active { background: var(--line); color: var(--text); }
+  canvas#trendChart { width: 100%; height: 200px; display: block; }
+
+  .well-select { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); font-size: 13px; padding: 7px 10px; border-radius: 6px; font-family: inherit; }
+  .sitemap-wrap { position: relative; width: 100%; height: 248px; background: var(--panel-2); border-radius: 8px; border: 1px solid var(--line); overflow: hidden; }
+  .sitemap-wrap svg { width: 100%; height: 100%; }
+  .well-dot { cursor: pointer; }
+  .well-label { font-size: 4.5px; fill: var(--muted); font-family: 'Inter', sans-serif; opacity: 0; transition: opacity 0.15s ease; }
+  .well-dot:hover .well-label, .well-dot.focused .well-label { opacity: 1; }
+
+  .gauge-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .gauge-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 24px; text-align: center; }
+  .gauge-title { font-size: 14px; color: var(--muted); margin-bottom: 14px; }
+  .gauge-wrap { position: relative; width: 120px; height: 120px; margin: 0 auto; }
+
+  .search-row { display: flex; gap: 12px; margin-bottom: 18px; }
+  .search-input { flex: 1; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 11px 16px; color: var(--text); font-size: 14px; font-family: inherit; }
+  .filter-pills { display: flex; gap: 8px; }
+  .pill { padding: 9px 16px; border-radius: 8px; font-size: 13.5px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); cursor: pointer; }
+  .pill.active { color: var(--orange); border-color: rgba(255,106,61,0.4); background: var(--orange-dim); }
+  .incident-list { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .incident-row { display: flex; align-items: center; gap: 16px; padding: 18px 22px; border-bottom: 1px solid var(--line); cursor: pointer; transition: background 0.12s ease; }
+  .incident-row:hover { background: var(--panel-2); }
+  .incident-row:last-child { border-bottom: none; }
+  .incident-icon { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; }
+  .incident-icon.ESCALATE { background: rgba(240,71,63,0.14); color: var(--red); }
+  .incident-icon.INVESTIGATE { background: rgba(240,166,61,0.14); color: var(--amber); }
+  .incident-icon.MONITOR { background: rgba(47,217,168,0.14); color: var(--teal); }
+  .incident-body { flex: 1; min-width: 0; }
+  .incident-title { font-weight: 600; font-size: 14.5px; margin-bottom: 2px; }
+  .incident-sub { font-size: 13px; }
+  .incident-sub.ESCALATE { color: var(--red); }
+  .incident-sub.INVESTIGATE { color: var(--amber); }
+  .incident-sub.MONITOR { color: var(--muted); }
+  .incident-time { font-size: 13px; color: var(--muted-2); white-space: nowrap; }
+  .incident-chevron { color: var(--muted-2); font-size: 16px; }
+  .empty-state { padding: 40px 22px; text-align: center; color: var(--muted); font-size: 14px; }
+
+  /* ---- Alert detail page ---- */
+  .back-link { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13.5px; cursor: pointer; margin-bottom: 18px; }
+  .back-link:hover { color: var(--text); }
+  .detail-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+  .detail-main { border-radius: 10px; padding: 24px; border: 1px solid var(--line); background: var(--panel); }
+  .detail-main.ESCALATE { border-color: rgba(240,71,63,0.4); background: linear-gradient(180deg, rgba(240,71,63,0.06), var(--panel)); }
+  .detail-main.INVESTIGATE { border-color: rgba(240,166,61,0.4); background: linear-gradient(180deg, rgba(240,166,61,0.06), var(--panel)); }
+  .detail-main.MONITOR { border-color: rgba(47,217,168,0.4); background: linear-gradient(180deg, rgba(47,217,168,0.06), var(--panel)); }
+  .detail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .detail-badge { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; letter-spacing: 0.03em; }
+  .detail-badge.ESCALATE { color: var(--red); } .detail-badge.INVESTIGATE { color: var(--amber); } .detail-badge.MONITOR { color: var(--teal); }
+  .confidence-chip { background: var(--orange-dim); color: var(--orange); font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 20px; }
+  .detail-heading { font-size: 16px; font-weight: 700; margin-bottom: 18px; color: var(--muted); }
+  .detail-section { border-left: 3px solid var(--line); padding: 12px 16px; margin-bottom: 12px; background: rgba(255,255,255,0.02); border-radius: 0 6px 6px 0; }
+  .detail-section.analysis { border-left-color: var(--orange); }
+  .detail-section.action { border-left-color: var(--teal); }
+  .detail-section-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; font-weight: 600; }
+  .detail-section-body { font-size: 14px; line-height: 1.55; color: var(--text); }
+  .detail-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+  .action-btn { padding: 11px; border-radius: 8px; font-size: 13.5px; font-weight: 600; text-align: center; cursor: pointer; border: 1px solid var(--line); font-family: inherit; }
+  .action-btn.investigate { background: var(--orange); border-color: var(--orange); color: #1a0d06; }
+  .action-btn.acknowledge { background: var(--panel-2); color: var(--text); }
+  .action-btn.escalate { background: rgba(240,71,63,0.12); border-color: rgba(240,71,63,0.4); color: var(--red); }
+  .action-btn.resolve { background: rgba(47,217,168,0.12); border-color: rgba(47,217,168,0.4); color: var(--teal); }
+  .telemetry-table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  .telemetry-table th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .telemetry-table td { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .telemetry-table tr:last-child td { border-bottom: none; }
+  .telemetry-status { font-weight: 600; }
+  .telemetry-status.high { color: var(--red); }
+  .telemetry-status.normal { color: var(--muted); }
+  .detail-map-wrap { position: relative; width: 100%; height: 160px; background: var(--panel-2); border-radius: 8px; overflow: hidden; margin-top: 8px; }
+
+  .conn-status { position: fixed; bottom: 14px; right: 20px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line); padding: 6px 12px; border-radius: 20px; }
+  .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); }
+  .conn-dot.live { background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="sidebar">
+    <div class="logo">NAUD</div>
+    <div class="nav-item active" data-page="dashboard">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item" data-page="history">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+      History
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="page-title" id="pageTitle">Dashboard</div>
+    </div>
+
+    <div class="page active" id="page-dashboard">
+      <div class="stat-row">
+        <div class="stat-card alert"><div class="stat-num red" id="statAlerts">0</div><div class="stat-label">Active alerts</div></div>
+        <div class="stat-card"><div class="stat-num" id="statEscalate">0</div><div class="stat-label">Wells in ESCALATE</div></div>
+        <div class="stat-card"><div class="stat-num" id="statOnline">0/0</div><div class="stat-label">Wells online</div></div>
+        <div class="stat-card"><div class="stat-num" id="statProcessed">—</div><div class="stat-label">Readings processed</div></div>
+      </div>
+
+      <div class="assessment-card" id="assessmentCard">
+        <div class="assessment-badge NOMINAL" id="assessmentBadge">NOMINAL</div>
+        <div>
+          <div class="assessment-well" id="assessmentWell">Fleet status</div>
+          <div class="assessment-text" id="assessmentText"><span class="empty">No active alerts. All wells operating within normal duty-cycle pattern.</span></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-title">Live sensor trend</div>
+              <div class="panel-sub" id="chartWellLabel">Focused well: <span class="val">—</span></div>
+            </div>
+            <div class="tab-group">
+              <button class="tab-btn active" data-sensor="H1">H1</button>
+              <button class="tab-btn" data-sensor="Oil_temperature">Oil temp</button>
+              <button class="tab-btn" data-sensor="Motor_current">Motor current</button>
+            </div>
+          </div>
+          <canvas id="trendChart"></canvas>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div><div class="panel-title">Site map</div><div class="panel-sub">Live well status</div></div>
+            <select class="well-select" id="wellSelect"></select>
+          </div>
+          <div class="sitemap-wrap"><svg id="siteMapSvg" viewBox="0 0 100 60" preserveAspectRatio="xMidYMid meet"></svg></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom: 20px;">
+        <div class="panel-head"><div><div class="panel-title">Associated telemetry</div><div class="panel-sub" id="telemetryWellLabel">Focused well: <span class="val">—</span></div></div></div>
+        <table class="telemetry-table">
+          <thead><tr><th>Feature</th><th>Value</th><th>Normal</th><th>Status</th></tr></thead>
+          <tbody id="dashTelemetry"><tr><td colspan="4" style="color: var(--muted); padding: 16px 0;">No active alert for this well.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="gauge-row">
+        <div class="gauge-card">
+          <div class="gauge-title">Discharge Pressure (TP2)</div>
+          <div class="gauge-wrap"><canvas id="gaugeTP2" width="120" height="120"></canvas></div>
+        </div>
+        <div class="gauge-card">
+          <div class="gauge-title">Reservoir Pressure</div>
+          <div class="gauge-wrap"><canvas id="gaugeReservoirs" width="120" height="120"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="page-history">
+      <div class="search-row">
+        <input class="search-input" placeholder="Search incidents, wells..." id="historySearch">
+        <div class="filter-pills">
+          <div class="pill active" data-filter="all">All</div>
+          <div class="pill" data-filter="ESCALATE">Critical</div>
+          <div class="pill" data-filter="INVESTIGATE">Warnings</div>
+        </div>
+      </div>
+      <div class="incident-list" id="incidentList">
+        <div class="empty-state">No incidents yet. This will populate as the model detects anomalies.</div>
+      </div>
+    </div>
+
+    <div class="page" id="page-alertDetail">
+      <div class="back-link" id="backToHistory">&larr; Back to History</div>
+      <div class="detail-grid">
+        <div>
+          <div class="detail-main" id="detailMain">
+            <div class="detail-head">
+              <div class="detail-badge" id="detailBadge"></div>
+              <div class="confidence-chip" id="detailConfidence"></div>
+            </div>
+            <div class="detail-heading" id="detailHeading"></div>
+            <div class="detail-section analysis">
+              <div class="detail-section-label">AI Analysis</div>
+              <div class="detail-section-body" id="detailAnalysis"></div>
+            </div>
+            <div class="detail-section action">
+              <div class="detail-section-label">Recommended Action</div>
+              <div class="detail-section-body" id="detailAction"></div>
+            </div>
+            <div class="detail-actions">
+              <div class="action-btn investigate" data-action="Investigate">Investigate</div>
+              <div class="action-btn acknowledge" data-action="Acknowledge">Acknowledge</div>
+              <div class="action-btn escalate" data-action="Escalate">Escalate</div>
+              <div class="action-btn resolve" data-action="Resolve">Resolve</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="panel" style="margin-bottom: 16px;">
+            <div class="panel-title" style="margin-bottom: 12px;">Associated Telemetry</div>
+            <table class="telemetry-table">
+              <thead><tr><th>Feature</th><th>Value</th><th>Normal</th><th>Status</th></tr></thead>
+              <tbody id="detailTelemetry"></tbody>
+            </table>
+          </div>
+          <div class="panel">
+            <div class="panel-title" style="margin-bottom: 4px;">Well Location</div>
+            <div class="detail-map-wrap"><svg id="detailMapSvg" viewBox="0 0 100 60" preserveAspectRatio="xMidYMid meet"></svg></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connText">connecting…</span></div>
+
+</div>
+
+<script>
+const API = '';
+
+let allAlerts = [];
+let wells = [];
+let focusedWellId = null;
+let currentSensor = 'H1';
+const trendData = {};
+const MAX_POINTS = 60;
+
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts.replace(' ', 'T'));
+  if (isNaN(d)) return ts;
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return sameDay ? `Today • ${time}` : `${d.toLocaleDateString()} • ${time}`;
+}
+
+function severityColor(sev) {
+  return sev === 'ESCALATE' ? '#f0473f' : sev === 'INVESTIGATE' ? '#f0a63d' : sev === 'MONITOR' ? '#2fd9a8' : '#565f6d';
+}
+
+// ---- Navigation ----
+function showPage(page) {
+  document.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.page === page));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(`page-${page}`)?.classList.add('active');
+  const titles = { dashboard: 'Dashboard', history: 'History', alertDetail: 'Anomaly Alert' };
+  document.getElementById('pageTitle').textContent = titles[page] || page;
+}
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => showPage(item.dataset.page));
+});
+document.getElementById('backToHistory').addEventListener('click', () => showPage('history'));
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentSensor = btn.dataset.sensor;
+    drawTrendChart();
+  });
+});
+
+document.querySelectorAll('.pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    renderHistory();
+  });
+});
+document.getElementById('historySearch').addEventListener('input', renderHistory);
+
+document.querySelectorAll('.action-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    btn.style.opacity = '0.55';
+    btn.textContent = `${btn.dataset.action}d`;
+    setTimeout(() => { btn.style.opacity = ''; btn.textContent = btn.dataset.action; }, 1400);
+  });
+});
+
+function activeFilter() {
+  const el = document.querySelector('.pill.active');
+  return el ? el.dataset.filter : 'all';
+}
+
+// ---- Trend chart ----
+function drawTrendChart() {
+  const canvas = document.getElementById('trendChart');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 200 * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const w = rect.width, h = 200;
+  ctx.clearRect(0, 0, w, h);
+
+  const data = (trendData[focusedWellId] && trendData[focusedWellId][currentSensor]) || [];
+  if (data.length < 2) return;
+
+  const min = Math.min(...data), max = Math.max(...data);
+  const pad = (max - min) * 0.15 || 1;
+  const lo = min - pad, hi = max + pad;
+  const stepX = w / (MAX_POINTS - 1);
+
+  ctx.strokeStyle = '#232a35'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) { const y = (h / 4) * i; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, 'rgba(255,106,61,0.35)'); grad.addColorStop(1, 'rgba(255,106,61,0)');
+
+  ctx.beginPath();
+  data.forEach((v, i) => { const x = i * stepX; const y = h - ((v - lo) / (hi - lo)) * h; i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+  const lastX = (data.length - 1) * stepX;
+  ctx.lineTo(lastX, h); ctx.lineTo(0, h); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+
+  ctx.beginPath(); ctx.strokeStyle = '#ff6a3d'; ctx.lineWidth = 2;
+  data.forEach((v, i) => { const x = i * stepX; const y = h - ((v - lo) / (hi - lo)) * h; i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+  ctx.stroke();
+}
+
+function drawGauge(canvasId, value, maxValue, color) {
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas.getContext('2d');
+  const cx = 60, cy = 60, r = 48;
+  ctx.clearRect(0, 0, 120, 120);
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0.75 * Math.PI, 0.25 * Math.PI, false);
+  ctx.strokeStyle = '#232a35'; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.stroke();
+  const frac = Math.max(0, Math.min(1, value / maxValue));
+  const endAngle = 0.75 * Math.PI + frac * 1.5 * Math.PI;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0.75 * Math.PI, endAngle, false);
+  ctx.strokeStyle = color; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.stroke();
+  ctx.fillStyle = '#f2f4f7'; ctx.font = '700 20px Inter, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(value.toFixed(1), cx, cy + 2);
+  ctx.fillStyle = '#8b95a3'; ctx.font = '400 11px Inter, sans-serif'; ctx.fillText('bar', cx, cy + 20);
+}
+
+// ---- Site map ----
+function renderSiteMap(svgId, highlightWellId, onlyWellId) {
+  const svg = document.getElementById(svgId);
+  const list = onlyWellId ? wells.filter(w => w.id === onlyWellId) : wells;
+  svg.innerHTML = list.map(w => {
+    const color = severityColor(w.status);
+    const focusedClass = w.id === highlightWellId ? 'focused' : '';
+    const ring = w.id === highlightWellId ? `<circle cx="${w.x}" cy="${w.y * 0.6}" r="4" fill="none" stroke="${color}" stroke-width="0.5" opacity="0.6"><animate attributeName="r" values="2.6;4.6;2.6}" dur="1.6s" repeatCount="indefinite"/></circle>` : '';
+    return `
+      <g class="well-dot ${focusedClass}" data-well-id="${w.id}">
+        <title>${w.name} — ${w.status}</title>
+        ${ring}
+        <circle cx="${w.x}" cy="${w.y * 0.6}" r="1.8" fill="${color}"/>
+        <text class="well-label" x="${w.x}" y="${w.y * 0.6 - 3.5}" text-anchor="middle">${w.name}</text>
+      </g>`;
+  }).join('');
+  svg.querySelectorAll('.well-dot').forEach(el => {
+    el.addEventListener('click', () => setFocusedWell(el.dataset.wellId));
+  });
+}
+
+function setFocusedWell(wellId) {
+  focusedWellId = wellId;
+  const well = wells.find(w => w.id === focusedWellId);
+  document.querySelector('#chartWellLabel .val').textContent = well?.name || wellId;
+  document.querySelector('#telemetryWellLabel .val').textContent = well?.name || wellId;
+  const sel = document.getElementById('wellSelect');
+  if (sel) sel.value = wellId;
+  drawTrendChart();
+  renderSiteMap('siteMapSvg', focusedWellId);
+  renderDashTelemetry();
+}
+
+function populateWellSelect() {
+  const sel = document.getElementById('wellSelect');
+  const current = sel.value;
+  sel.innerHTML = wells.map(w => `<option value="${w.id}">${w.name}${w.status !== 'NOMINAL' ? ` (${w.status})` : ''}</option>`).join('');
+  if (current) sel.value = current;
+}
+document.getElementById('wellSelect').addEventListener('change', (e) => setFocusedWell(e.target.value));
+
+function renderDashTelemetry() {
+  const tbody = document.getElementById('dashTelemetry');
+  const alert = allAlerts.find(a => a.well_id === focusedWellId);
+  if (!alert) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color: var(--muted); padding: 16px 0;">No active alert for this well.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = alert.top_features.map(f => {
+    const isHigh = Math.abs(f.z_score) >= 2.0;
+    return `
+      <tr>
+        <td>${f.feature.replace(/_/g, ' ')}</td>
+        <td>${f.actual_value !== null ? f.actual_value : '—'}</td>
+        <td>${f.normal_mean !== null ? f.normal_mean : '—'}</td>
+        <td class="telemetry-status ${isHigh ? 'high' : 'normal'}">${isHigh ? `${f.z_score.toFixed(1)}\u03c3` : 'nominal'}</td>
+      </tr>`;
+  }).join('');
+}
+
+// ---- Polling ----
+async function pollHealth() {
+  try {
+    const r = await fetch(`${API}/health`);
+    const data = await r.json();
+    document.getElementById('connDot').classList.add('live');
+    document.getElementById('connText').textContent = 'live';
+    const running = Object.values(data.wells || {}).filter(w => w.running).length;
+    document.getElementById('statOnline').textContent = `${running}/${data.well_count || 0}`;
+    const totalCursor = Object.values(data.wells || {}).reduce((sum, w) => sum + (w.cursor || 0), 0);
+    document.getElementById('statProcessed').textContent = totalCursor.toLocaleString();
+  } catch (e) {
+    document.getElementById('connDot').classList.remove('live');
+    document.getElementById('connText').textContent = 'disconnected';
+  }
+}
+
+async function pollWells() {
+  try {
+    const r = await fetch(`${API}/wells`);
+    const data = await r.json();
+    wells = data.wells || [];
+    if (!focusedWellId && wells.length) {
+      const esc = wells.find(w => w.status === 'ESCALATE') || wells.find(w => w.status === 'INVESTIGATE') || wells[0];
+      focusedWellId = esc.id;
+      document.querySelector('#chartWellLabel .val').textContent = esc.name;
+      document.querySelector('#telemetryWellLabel .val').textContent = esc.name;
+    }
+    populateWellSelect();
+    document.getElementById('statEscalate').textContent = wells.filter(w => w.status === 'ESCALATE').length;
+    renderSiteMap('siteMapSvg', focusedWellId);
+    renderDashTelemetry();
+
+    const focused = wells.find(w => w.id === focusedWellId);
+    if (focused && focused.reading) {
+      if (!trendData[focusedWellId]) trendData[focusedWellId] = { H1: [], Oil_temperature: [], Motor_current: [] };
+      for (const sensor of Object.keys(trendData[focusedWellId])) {
+        if (sensor in focused.reading) {
+          trendData[focusedWellId][sensor].push(focused.reading[sensor]);
+          if (trendData[focusedWellId][sensor].length > MAX_POINTS) trendData[focusedWellId][sensor].shift();
+        }
+      }
+      drawTrendChart();
+      if ('TP2' in focused.reading) drawGauge('gaugeTP2', focused.reading.TP2, 10, '#2fd9a8');
+      if ('Reservoirs' in focused.reading) drawGauge('gaugeReservoirs', focused.reading.Reservoirs, 10, '#2fd9a8');
+    }
+  } catch (e) { /* keep last render */ }
+}
+
+async function pollAlerts() {
+  try {
+    const r = await fetch(`${API}/alerts?limit=100`);
+    const data = await r.json();
+    allAlerts = data.alerts || [];
+    document.getElementById('statAlerts').textContent = allAlerts.length;
+
+    const badge = document.getElementById('assessmentBadge');
+    const text = document.getElementById('assessmentText');
+    const card = document.getElementById('assessmentCard');
+    const wellLabel = document.getElementById('assessmentWell');
+
+    if (allAlerts.length === 0) {
+      badge.className = 'assessment-badge NOMINAL'; badge.textContent = 'NOMINAL';
+      card.className = 'assessment-card';
+      wellLabel.textContent = 'Fleet status';
+      text.innerHTML = '<span class="empty">No active alerts. All wells operating within normal duty-cycle pattern.</span>';
+    } else {
+      const latest = allAlerts[0];
+      badge.className = `assessment-badge ${latest.severity}`; badge.textContent = latest.severity;
+      card.className = `assessment-card ${latest.severity}`;
+      wellLabel.textContent = latest.well_name;
+      text.textContent = latest.plain_language;
+    }
+    renderHistory();
+    renderDashTelemetry();
+  } catch (e) { /* keep last render */ }
+}
+
+function renderHistory() {
+  const filter = activeFilter();
+  const search = (document.getElementById('historySearch').value || '').toLowerCase();
+  const list = document.getElementById('incidentList');
+
+  let filtered = allAlerts;
+  if (filter !== 'all') filtered = filtered.filter(a => a.severity === filter);
+  if (search) {
+    filtered = filtered.filter(a =>
+      a.well_name.toLowerCase().includes(search) ||
+      a.plain_language.toLowerCase().includes(search) ||
+      a.top_features.some(f => f.feature.toLowerCase().includes(search))
+    );
+  }
+
+  if (filtered.length === 0) {
+    list.innerHTML = '<div class="empty-state">No incidents match. This will populate as the model detects anomalies.</div>';
+    return;
+  }
+
+  const iconFor = { ESCALATE: '!', INVESTIGATE: '\u26A0', MONITOR: '\u2713' };
+  list.innerHTML = filtered.slice(0, 60).map(a => {
+    const feats = a.top_features.map(f => f.feature.replace(/_/g, ' ')).join(', ');
+    return `
+      <div class="incident-row" data-alert-id="${a.id}">
+        <div class="incident-icon ${a.severity}">${iconFor[a.severity] || '?'}</div>
+        <div class="incident-body">
+          <div class="incident-title">${a.well_name}</div>
+          <div class="incident-sub ${a.severity}">${feats}</div>
+        </div>
+        <div class="incident-time">${fmtTime(a.timestamp)}</div>
+        <div class="incident-chevron">&rsaquo;</div>
+      </div>`;
+  }).join('');
+
+  list.querySelectorAll('.incident-row').forEach(row => {
+    row.addEventListener('click', () => openAlertDetail(parseInt(row.dataset.alertId)));
+  });
+}
+
+function openAlertDetail(alertId) {
+  const a = allAlerts.find(x => x.id === alertId);
+  if (!a) return;
+
+  document.getElementById('detailMain').className = `detail-main ${a.severity}`;
+  document.getElementById('detailBadge').className = `detail-badge ${a.severity}`;
+  const label = a.severity === 'ESCALATE' ? 'CRITICAL' : a.severity === 'INVESTIGATE' ? 'WARNING' : 'INFO';
+  document.getElementById('detailBadge').innerHTML = `&#9888; ${label} EVT-${a.id}`;
+  document.getElementById('detailConfidence').textContent = `Flag consistency: ${Math.round(a.flag_rate * 100)}%`;
+  document.getElementById('detailHeading').textContent = `Anomaly at ${a.well_name}`;
+
+  const paragraphs = a.plain_language.split('\n\n');
+  document.getElementById('detailAnalysis').textContent = paragraphs.find(p => p.startsWith('What')) || paragraphs[0] || '';
+  document.getElementById('detailAction').textContent = paragraphs.find(p => p.startsWith('Recommended')) || 'Recommended action: review manually.';
+
+  const tbody = document.getElementById('detailTelemetry');
+  tbody.innerHTML = a.top_features.map(f => {
+    const isHigh = f.actual_value !== null && f.normal_mean !== null && Math.abs(f.z_score) >= 2.0;
+    return `
+      <tr>
+        <td>${f.feature.replace(/_/g, ' ')}</td>
+        <td>${f.actual_value !== null ? f.actual_value : '—'}</td>
+        <td>${f.normal_mean !== null ? f.normal_mean : '—'}</td>
+        <td class="telemetry-status ${isHigh ? 'high' : 'normal'}">${isHigh ? `${f.z_score.toFixed(1)}\u03c3` : 'nominal'}</td>
+      </tr>`;
+  }).join('');
+
+  renderSiteMap('detailMapSvg', a.well_id, a.well_id);
+
+  showPage('alertDetail');
+}
+
+async function bootstrap() {
+  await pollWells();
+  pollHealth();
+  pollAlerts();
+}
+
+bootstrap();
+setInterval(pollHealth, 4000);
+setInterval(pollWells, 1200);
+setInterval(pollAlerts, 1500);
+window.addEventListener('resize', drawTrendChart);
+</script>
+</body>
+</html>
