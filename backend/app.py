@@ -43,7 +43,7 @@ sys.path.insert(0, HERE)
 from pipeline import CompressorAnomalyPipeline  # noqa: E402
 from explain import explain_alerts_batch  # noqa: E402
 from replay import ReplaySimulator  # noqa: E402
-from generate_demo_data import SENSORS  # noqa: E402
+from generate_demo_data import engineer_features, SENSORS  # noqa: E402
 
 REAL_MODEL_PATH = os.environ.get("MODEL_PATH", os.path.join(HERE, '..', 'models', 'compressor_pipeline_v3.pkl'))
 READINGS_TABLE = os.environ.get("READINGS_TABLE", "readings")
@@ -102,6 +102,9 @@ def make_on_tick(well_id, well_name):
         if pipeline is None or len(window_df) < 5:
             return
         try:
+            missing = [c for c in pipeline.feature_cols if c not in window_df.columns]
+            if missing:
+                window_df = engineer_features(window_df)
             alerts_df = pipeline.run(window_df, top_n=3)
         except Exception as e:
             print(f"[on_tick:{well_id}] pipeline error: {e}")
