@@ -504,7 +504,7 @@ async function pollWells() {
       if ('TP2' in focused.reading) drawGauge('gaugeTP2', focused.reading.TP2, 10, '#2fd9a8');
       if ('Reservoirs' in focused.reading) drawGauge('gaugeReservoirs', focused.reading.Reservoirs, 10, '#2fd9a8');
     }
-  } catch (e) { /* keep last render */ }
+  } catch (e) { console.error('pollWells failed:', e); }
 }
 
 async function pollAlerts() {
@@ -533,7 +533,7 @@ async function pollAlerts() {
     }
     renderHistory();
     renderDashTelemetry();
-  } catch (e) { /* keep last render */ }
+  } catch (e) { console.error('pollWells failed:', e); }
 }
 
 function renderHistory() {
