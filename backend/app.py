@@ -237,7 +237,11 @@ def _well_status(well_id):
 @app.get("/health")
 def health():
     wells_summary = {
-        wid: {"running": w["simulator"].running, "cursor_ts": str(w["simulator"].cursor_ts)}
+        wid: {
+            "running": w["simulator"].running,
+            "cursor_ts": str(w["simulator"].cursor_ts),
+            "rows_processed": w["simulator"].rows_processed,
+        }
         for wid, w in state["wells"].items()
     }
     total_rows = None

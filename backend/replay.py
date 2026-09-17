@@ -28,6 +28,7 @@ class ReplaySimulator:
         self._sensor_std = self._load_stds() if jitter_frac else {}
         self.min_ts, self.max_ts = self._bounds()
         self.cursor_ts = start_ts if start_ts is not None else self.min_ts
+        self.rows_processed = 0
         self.running = False
         self.buffer = pd.DataFrame()
         self._lock = asyncio.Lock()
@@ -86,6 +87,7 @@ class ReplaySimulator:
             "oil_level": "Oil_level", "caudal_impulses": "Caudal_impulses",
         })
         self.buffer = pd.concat([self.buffer, new_rows]).tail(self.window_size * 3)
+        self.rows_processed += len(new_rows)
         return new_rows
 
     def current_window(self):

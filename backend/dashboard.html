@@ -467,7 +467,7 @@ async function pollHealth() {
     document.getElementById('connText').textContent = 'live';
     const running = Object.values(data.wells || {}).filter(w => w.running).length;
     document.getElementById('statOnline').textContent = `${running}/${data.well_count || 0}`;
-    const totalCursor = Object.values(data.wells || {}).reduce((sum, w) => sum + (w.cursor || 0), 0);
+    const totalCursor = Object.values(data.wells || {}).reduce((sum, w) => sum + (w.rows_processed || 0), 0);
     document.getElementById('statProcessed').textContent = totalCursor.toLocaleString();
   } catch (e) {
     document.getElementById('connDot').classList.remove('live');
