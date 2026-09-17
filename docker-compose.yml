@@ -1,0 +1,20 @@
+services:
+  naud:
+    build: .
+    container_name: naud
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount real data/model from the host so you can update them
+      # without rebuilding the image. Safe even if these dirs don't
+      # exist yet on the host - Docker will create them as directories.
+      - ./data:/app/data
+      - ./models:/app/models
+    environment:
+      - DATA_PATH=/app/data/MetroPT3(AirCompressor).csv
+      - MODEL_PATH=/app/models/compressor_pipeline_v3.pkl
+    # Keep it modest given the VM's 1GiB RAM - adjust up if you resize.
+    # (mem_limit, not deploy.resources, since that block is swarm-only
+    # and silently ignored in plain `docker compose up`.)
+    mem_limit: 700m
