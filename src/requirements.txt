@@ -5,3 +5,5 @@ joblib
 fastapi
 uvicorn[standard]
 pydantic
+psycopg2-binary
+sqlalchemy
