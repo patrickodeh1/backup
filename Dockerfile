@@ -21,4 +21,6 @@ EXPOSE 8000
 # -w 1: single worker is required — app state (the simulated wells) lives
 # in-memory in one process. Running multiple workers would give each
 # request a different, inconsistent view of the fleet.
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# $PORT is set by Heroku at runtime; defaults to 8000 for plain `docker run`.
+ENV PORT=8000
+CMD uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1
