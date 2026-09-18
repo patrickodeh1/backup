@@ -96,7 +96,11 @@ class ReplaySimulator:
 
     def latest_reading(self):
         """Display-only snapshot. Jitter (if configured) is applied here, never to
-        the buffer the pipeline reads, so detection always runs on real recorded data."""
+        the buffer the pipeline reads, so detection always runs on real recorded data.
+        Jittered values are clamped at 0 -- none of these sensors (pressure, temperature,
+        current) are physically meaningful below zero, and a real reading near zero
+        (e.g. mid-cycle) plus noise can otherwise dip slightly negative, which looks
+        wrong on a gauge even though it doesn't affect detection."""
         if len(self.buffer) == 0:
             return None
         reading = self.buffer.iloc[-1].to_dict()
@@ -104,18 +108,27 @@ class ReplaySimulator:
             for c in self.sensor_cols:
                 std = self._sensor_std.get(c, 0) or 0
                 if std > 0 and c in reading and reading[c] is not None:
-                    reading[c] = float(reading[c]) + float(self.rng.normal(0, std * self.jitter_frac))
+                    jittered = float(reading[c]) + float(self.rng.normal(0, std * self.jitter_frac))
+                    reading[c] = max(0.0, jittered)
         return reading
 
     async def run_forever(self, on_tick):
         """
         on_tick(new_rows, window_df) is called each tick with the newly replayed
         rows and the current trailing window. Runs until self.running is set False.
+
+        step() does a blocking Postgres query (pd.read_sql). Running it directly here
+        would block this whole background thread's event loop for the query's duration,
+        serializing every well's tick behind whichever one is currently querying --
+        with 5 wells hitting Postgres every ~1.2s, that adds up. run_in_executor moves
+        the blocking call to a worker thread so the 5 wells' queries can actually
+        overlap instead of queueing behind each other.
         """
         self.running = True
+        loop = asyncio.get_event_loop()
         while self.running:
             async with self._lock:
-                new_rows = self.step()
+                new_rows = await loop.run_in_executor(None, self.step)
                 window_df = self.current_window()
             try:
                 on_tick(new_rows, window_df)

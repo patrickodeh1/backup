@@ -79,6 +79,7 @@ state = {
     "alerts": [],         # global feed, newest first, each tagged with well_id/well_name
     "next_alert_id": 1,
     "max_alerts": 500,
+    "total_rows": None,
 }
 
 
@@ -182,6 +183,7 @@ async def lifespan(app: FastAPI):
     engine, pipeline = load_pipeline_and_data()
     state["pipeline"] = pipeline
     state["engine"] = engine
+    state["total_rows"] = int(pd.read_sql(f"SELECT count(*) AS n FROM {READINGS_TABLE}", engine)["n"][0])
     state["wells"] = build_wells(engine, pipeline)
     start_background_replay()
     yield
@@ -244,14 +246,11 @@ def health():
         }
         for wid, w in state["wells"].items()
     }
-    total_rows = None
-    if state.get("engine") is not None:
-        total_rows = int(pd.read_sql(f"SELECT count(*) AS n FROM {READINGS_TABLE}", state["engine"])["n"][0])
     return {
         "status": "ok",
         "using_demo_data": state["using_demo"],
         "model_loaded": state["pipeline"] is not None,
-        "total_rows": total_rows,
+        "total_rows": state["total_rows"],
         "well_count": len(state["wells"]),
         "wells": wells_summary,
     }

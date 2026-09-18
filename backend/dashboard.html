@@ -132,6 +132,57 @@
   .conn-status { position: fixed; bottom: 14px; right: 20px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--line); padding: 6px 12px; border-radius: 20px; }
   .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); }
   .conn-dot.live { background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* ---- Mobile / tablet ---- */
+  @media (max-width: 860px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; min-height: 100vh; }
+    .sidebar { display: flex; align-items: center; gap: 6px; padding: 14px 16px; border-right: none; border-bottom: 1px solid var(--line); overflow-x: auto; }
+    .logo { margin-bottom: 0; margin-right: 8px; font-size: 18px; flex-shrink: 0; }
+    .nav-item { margin-bottom: 0; white-space: nowrap; padding: 9px 12px; font-size: 13.5px; flex-shrink: 0; }
+    .topbar { padding: 20px 18px 16px; }
+    .page-title { font-size: 21px; }
+    .page { padding: 0 18px 100px; }
+
+    .stat-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .stat-card { padding: 14px; }
+    .stat-num { font-size: 22px; }
+    .stat-label { font-size: 12px; }
+
+    .assessment-card { flex-direction: column; gap: 10px; padding: 16px; }
+
+    .grid-2 { grid-template-columns: 1fr; }
+    .panel { padding: 16px; }
+    .panel-head { flex-wrap: wrap; gap: 10px; }
+    .sitemap-wrap { height: 200px; }
+
+    .gauge-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .gauge-card { padding: 14px; }
+    .gauge-wrap { width: 92px; height: 92px; }
+
+    .search-row { flex-direction: column; }
+    .filter-pills { justify-content: stretch; }
+    .pill { flex: 1; text-align: center; }
+
+    .incident-row { padding: 14px 16px; gap: 10px; }
+    .incident-time { display: none; }
+
+    .detail-grid { grid-template-columns: 1fr; }
+    .detail-main { padding: 18px; }
+    .detail-actions { grid-template-columns: 1fr 1fr; }
+
+    .telemetry-table { min-width: 460px; }
+    .conn-status { bottom: auto; top: 14px; right: 14px; font-size: 10px; padding: 4px 9px; }
+  }
+
+  @media (max-width: 460px) {
+    .stat-row { grid-template-columns: 1fr 1fr; }
+    .gauge-row { grid-template-columns: 1fr; }
+    .detail-actions { grid-template-columns: 1fr; }
+    .nav-item .nav-icon { width: 16px; height: 16px; }
+    .well-select { font-size: 12px; padding: 6px 8px; }
+  }
 </style>
 </head>
 <body>
@@ -197,10 +248,12 @@
 
       <div class="panel" style="margin-bottom: 20px;">
         <div class="panel-head"><div><div class="panel-title">Associated telemetry</div><div class="panel-sub" id="telemetryWellLabel">Focused well: <span class="val">—</span></div></div></div>
+        <div class="table-scroll">
         <table class="telemetry-table">
           <thead><tr><th>Feature</th><th>Value</th><th>Normal</th><th>Status</th></tr></thead>
           <tbody id="dashTelemetry"><tr><td colspan="4" style="color: var(--muted); padding: 16px 0;">No active alert for this well.</td></tr></tbody>
         </table>
+        </div>
       </div>
 
       <div class="gauge-row">
@@ -258,10 +311,12 @@
         <div>
           <div class="panel" style="margin-bottom: 16px;">
             <div class="panel-title" style="margin-bottom: 12px;">Associated Telemetry</div>
+            <div class="table-scroll">
             <table class="telemetry-table">
               <thead><tr><th>Feature</th><th>Value</th><th>Normal</th><th>Status</th></tr></thead>
               <tbody id="detailTelemetry"></tbody>
             </table>
+            </div>
           </div>
           <div class="panel">
             <div class="panel-title" style="margin-bottom: 4px;">Well Location</div>
